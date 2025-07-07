@@ -895,3 +895,181 @@ def get_heatmap_data():
 
     except Exception as e:
         return {"error": str(e)}
+
+from fastapi import Query
+
+@app.get("/api/dashboard-summary")
+def dashboard_summary(
+    start_year: int = Query(1957),
+    end_year: int = Query(2023),
+    status: Optional[str] = Query(None),
+    country: Optional[str] = Query(None)
+):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        # Common WHERE clauses
+        where_clauses = ["EXTRACT(YEAR FROM launch_date) BETWEEN %s AND %s"]
+        params = [start_year, end_year]
+
+        if status and status != "All":
+            where_clauses.append("mission_status = %s")
+            params.append(status)
+
+        if country and country != "All":
+            where_clauses.append("""
+                (CASE
+                    WHEN location ILIKE '%USA%' THEN 'United States'
+                    WHEN location ILIKE '%Russia%' THEN 'Russia'
+                    WHEN location ILIKE '%China%' THEN 'China'
+                    WHEN location ILIKE '%Japan%' THEN 'Japan'
+                    WHEN location ILIKE '%India%' THEN 'India'
+                    WHEN location ILIKE '%France%' OR location ILIKE '%Guiana%' THEN 'France'
+                    WHEN location ILIKE '%New Zealand%' THEN 'New Zealand'
+                    WHEN location ILIKE '%Iran%' THEN 'Iran'
+                    WHEN location ILIKE '%South Korea%' THEN 'South Korea'
+                    WHEN location ILIKE '%North Korea%' THEN 'North Korea'
+                    WHEN location ILIKE '%Kenya%' THEN 'Kenya'
+                    WHEN location ILIKE '%Brazil%' THEN 'Brazil'
+                    ELSE 'Other'
+                END) = %s
+            """)
+            params.append(country)
+
+        where_sql = " AND ".join(where_clauses)
+
+        # Total Missions
+        cursor.execute(f"SELECT COUNT(*) FROM space_missions WHERE {where_sql}", tuple(params))
+        total_missions = cursor.fetchone()["count"]
+
+        # First Launch
+        cursor.execute(f"SELECT MIN(EXTRACT(YEAR FROM launch_date)) FROM space_missions WHERE {where_sql}", tuple(params))
+        first_launch = int(cursor.fetchone()["min"]) if cursor.fetchone()["min"] else None
+
+        # Most Used Rocket
+        cursor.execute(f"""
+            SELECT rocket
+            FROM space_missions
+            WHERE {where_sql}
+            GROUP BY rocket
+            ORDER BY COUNT(*) DESC
+            LIMIT 1
+        """, tuple(params))
+        row = cursor.fetchone()
+        most_used_rocket = row["rocket"] if row else None
+
+        # Top Company
+        cursor.execute(f"""
+            SELECT company
+            FROM space_missions
+            WHERE {where_sql}
+            GROUP BY company
+            ORDER BY COUNT(*) DESC
+            LIMIT 1
+        """, tuple(params))
+        row = cursor.fetchone()
+        top_company = row["company"] if row else None
+
+        # Top Location
+        cursor.execute(f"""
+            SELECT location
+            FROM space_missions
+            WHERE {where_sql}
+            GROUP BY location
+            ORDER BY COUNT(*) DESC
+            LIMIT 1
+        """, tuple(params))
+        row = cursor.fetchone()
+        top_location = row["location"] if row else None
+
+        # Mission Status Counts
+        cursor.execute(f"""
+            SELECT mission_status, COUNT(*) AS count
+            FROM space_missions
+            WHERE {where_sql}
+            GROUP BY mission_status
+            ORDER BY count DESC
+        """, tuple(params))
+        mission_status_counts = cursor.fetchall()
+
+        # Top Companies
+        cursor.execute(f"""
+            SELECT company, COUNT(*) AS mission_count
+            FROM space_missions
+            WHERE {where_sql}
+            GROUP BY company
+            ORDER BY mission_count DESC
+            LIMIT 10
+        """, tuple(params))
+        top_companies = cursor.fetchall()
+
+        # Top Launch Locations
+        cursor.execute(f"""
+            SELECT location, COUNT(*) AS count
+            FROM space_missions
+            WHERE {where_sql}
+            GROUP BY location
+            ORDER BY count DESC
+            LIMIT 10
+        """, tuple(params))
+        top_launch_locations = cursor.fetchall()
+
+        # Launches per Year
+        cursor.execute(f"""
+            SELECT EXTRACT(YEAR FROM launch_date) AS year, COUNT(*) AS count
+            FROM space_missions
+            WHERE {where_sql}
+            GROUP BY year
+            ORDER BY year
+        """, tuple(params))
+        launches_per_year = cursor.fetchall()
+
+        # Top Rocket Types
+        cursor.execute(f"""
+            SELECT rocket, COUNT(*) AS count
+            FROM space_missions
+            WHERE {where_sql}
+            GROUP BY rocket
+            ORDER BY count DESC
+            LIMIT 10
+        """, tuple(params))
+        top_rocket_types = cursor.fetchall()
+
+        # Launch Outcomes
+        cursor.execute(f"""
+            SELECT mission_status AS outcome, COUNT(*) AS count
+            FROM space_missions
+            WHERE {where_sql}
+            GROUP BY mission_status
+            ORDER BY count DESC
+        """, tuple(params))
+        launch_outcomes = cursor.fetchall()
+
+        # Insights (example: re-run the insights query or re-use if you prefer)
+        insights = [
+            f"📈 {total_missions} launches between {start_year} and {end_year}.",
+            f"🚀 Most used rocket: {most_used_rocket or 'N/A'}.",
+            f"🏢 Top company: {top_company or 'N/A'}."
+        ]
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "total_missions": total_missions,
+            "first_launch": first_launch,
+            "most_used_rocket": most_used_rocket,
+            "top_company": top_company,
+            "top_location": top_location,
+            "mission_status_counts": mission_status_counts,
+            "top_companies": top_companies,
+            "top_launch_locations": top_launch_locations,
+            "launches_per_year": launches_per_year,
+            "top_rocket_types": top_rocket_types,
+            "launch_outcomes": launch_outcomes,
+            "insights": insights
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
