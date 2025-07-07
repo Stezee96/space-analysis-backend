@@ -5,7 +5,7 @@ from sklearn.linear_model import LogisticRegression
 import joblib
 
 # Connect to DB
-engine = create_engine('postgresql://postgres:1051@localhost:5432/space_mission_risk_analysis')
+engine = create_engine('postgresql://space_analysis_db_user:wsohryjH1VouT59Oi4CKREKhcT3BBJW8@dpg-d1kreibe5dus73euh4r0-a.oregon-postgres.render.com:5432/space_analysis_db')
 query = "SELECT * FROM space_missions"
 df = pd.read_sql(query, engine)
 
